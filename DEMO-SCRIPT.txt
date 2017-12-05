@@ -1,0 +1,94 @@
+##### DEMO ####
+
+
+1) Open Powershell ISE and Install DBA Tools
+Install-Module dbatools
+
+
+2) Restore WideWorldImporters Database
+Restore-DbaDatabase -SqlInstance SQLSatSlovenia -Path F:\Backup
+
+3) Script Out Database using mssql-scripter
+On CMD: C:\MyProjects\AzureMigration\Scripts>activate.bat
+mssql-scripter -S localhost -d WideWorldImporters --exclude-use-database --target-server-version AzureDB > C:\MyProjects\AzureMigration\SQLScripts\AzureSQLDB_AS_Target.sql
+mssql-scripter -S localhost -d WideWorldImporters --exclude-use-database > C:\MyProjects\AzureMigration\SQLScripts\RegularScriptingOut.sql
+
+4) Azure Cloud Shell Create Database Server. For now only the Server (Logical)
+az sql server create --resource-group slovenia --location westeurope --name azuredbsrv --admin-user sqlservice --admin-password P@ssw0rd3655
+
+
+5) Create Empty Database in Azure
+az sql db create --name WideWorldImporters --resource-group slovenia --server azuredbsrv --edition Premium --service-objective P1 --max-size 500GB
+
+6) Test the scripts manually
+   6.1) Change firewall rules, but first show that the list is empty: 
+        6.1.1) az sql server firewall-rule list --resource-group slovenia --server azuredbsrv
+        6.1.2) az sql server firewall-rule create --end-ip-address 0.0.0.0 --name AzureFW --resource-group slovenia --server azuredbsrv --start-ip-address 0.0.0.0
+   6.2) connect to Azure SQL DB Instance: azuredbsrv.database.windows.net
+
+
+7) Show DTU Calculator
+   7.1) Open http://dtucalculator.azurewebsites.net
+   7.2) Upload C:\MyProjects\sql-perfmon-log.csv
+
+
+8) Now show DMA
+   8.1) Create a new project
+   8.2) Select Source/Target and Database
+   8.3) Create an assessment of the database
+   8.3) DMA can also migrate. Migrate eadl365db.
+        8.3.1) Create the DB based on DTU calculator recommendation: az sql db create --name eadl365db --resource-group slovenia --server azuredbsrv --edition Standard --service-objective S0 --max-size 250GB
+        8.3.2) Server: azuredbsrv.database.windows.net
+   8.4) Tip: Scale UP for migration and Scale down after it is migrated
+
+
+9) Create a new Database on Azure SQL DB 
+   9.1) Create database with more resources
+   9.2) az sql db create --name eadl365db_DMA --resource-group slovenia --server azuredbsrv --edition Standard --service-objective S2 --max-size 250GB
+
+
+10) Show DACPAC or BACPAC
+    10.1) DACPAC means only database objects
+    10.2) BACPAC means database objects and data
+    10.3) Show Deploy Database to Azure
+    10.4) Tip: Look at database compatibility level
+
+11) Migrate using Replication / Migrate using SQL Azure Migration Wizard
+
+    11.2) Using Replication
+          11.2.1) Create empty database: az sql db create --name eadl365db_repl --resource-group slovenia --server azuredbsrv --edition Standard --service-objective S0 --max-size 250GB
+          11.2.2) Create Distributor / Create Publisher / Create Snapshot / Create Subscriber / Create a SQL Login in the Subscriber for replicating data
+                  11.2.2.1) Share: \\SQLSatSlovenia\repldata
+          11.2.3) Connect to Azure DB and Create login in master: CREATE LOGIN repl_agent with password = 'P@ssw0rd3655'
+          11.2.4) Create user in DB: CREATE USER repl_agent FROM LOGIN repl_agent
+          11.2.5) Assign Permission: ALTER ROLE db_owner add member repl_agent
+
+    11.3) Using SQL Azure Migration Wizard
+          11.3.1) Create Database: az sql db create --name eadl365db_SQLAZWD --resource-group slovenia --server azuredbsrv --edition Standard --service-objective S0 --max-size 250GB
+          11.3.2) Open SQLAzureMW at C:\MyProjects\SQLAzureMW v5.15.6 Release Binary for SQL Server 2014
+
+
+
+12) Test Inserts on AzureSQLDB
+    12.1) Open C:\MyProjects\workload-drivers\vehicle-location-insert
+    12.2) Execute VehicleLocation.sql
+    12.3) Execute a few time
+    12.4) Show on Azure console the statistics
+AzureDB: Server=azuredbsrv.database.windows.net;Database=WideWorldImporters;User ID=sqlservice;Password=P@ssw0rd3655;Column Encryption Setting=disabled;Max Pool Size=250;
+LocalDB: Server=.;Database=WideWorldImporters;Integrated Security=SSPI;Column Encryption Setting=disabled;Max Pool Size=250;
+
+
+13) Drop everything!!
+    13.1) Disable Subscriber
+    13.2) Disable Distributor: C:\MyProjects\AzureMigration\SQLScripts\DisablePublishingDistribution.sql
+    13.3) Drop all databases
+az sql db delete --name WideWorldImporters --server azuredbsrv --resource-group slovenia --yes
+az sql db delete --name eadl365db --server azuredbsrv --resource-group slovenia --yes
+az sql db delete --name eadl365db_bacpac --server azuredbsrv --resource-group slovenia --yes
+az sql db delete --name eadl365db_DMA --server azuredbsrv --resource-group slovenia --yes
+az sql db delete --name eadl365db_repl --server azuredbsrv --resource-group slovenia --yes
+az sql db delete --name eadl365db_SQLAZWD --server azuredbsrv --resource-group slovenia --yes
+az sql server delete --name azuredbsrv --resource-group slovenia --yes
+
+
+
